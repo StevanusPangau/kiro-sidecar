@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  case "$SOURCE" in
+    /*) ;;
+    *) SOURCE="$DIR/$SOURCE" ;;
+  esac
+done
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+
+if [ -x "$ROOT/target/release/kiro-sidecar" ]; then
+  exec "$ROOT/target/release/kiro-sidecar" "$@"
+fi
+
+if [ -x "$ROOT/target/debug/kiro-sidecar" ]; then
+  exec "$ROOT/target/debug/kiro-sidecar" "$@"
+fi
+
+if command -v cargo >/dev/null 2>&1; then
+  exec cargo run --quiet --manifest-path "$ROOT/Cargo.toml" -- "$@"
+fi
+
+echo "kiro-sidecar: Rust binary not built and cargo is not available" >&2
+echo "kiro-sidecar: run 'cargo build --release' in $ROOT" >&2
+exit 127

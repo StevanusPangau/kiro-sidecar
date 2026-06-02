@@ -1,0 +1,52 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test, lint, type-check, and coverage caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+.tox/
+.nox/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Build and packaging outputs
+build/
+dist/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+wheels/
+/target/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Kiro sidecar runtime state
+.kiro-sidecar/
+.kiro/agents/codex_kiro_writer_*.json
+
+# Local agent skills
+.agents/
+skills-lock.json
+
+# Logs and local OS/editor noise
+*.log
+.DS_Store
+Thumbs.db
