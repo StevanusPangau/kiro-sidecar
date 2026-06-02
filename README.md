@@ -5,16 +5,40 @@ Rust CLI for using Kiro CLI as a bounded Codex sidecar.
 The tool keeps Codex as the orchestrator and final reviewer while Kiro performs
 read-heavy exploration, reviews, patch drafting, and bounded edits.
 
-## Build
+## Prerequisites
+
+- Rust toolchain with Cargo.
+- Git.
+- Kiro CLI available as `kiro-cli` on `PATH`, or set `KIRO_CLI` to the
+  executable path.
+
+## Install From Source
 
 ```bash
+git clone <repo-url>
+cd kiro-sidecar
 cargo build --release
+mkdir -p ~/.local/bin
+ln -sf "$(pwd)/bin/kiro-sidecar" ~/.local/bin/kiro-sidecar
 ```
 
-The `bin/kiro-sidecar` wrapper runs `target/release/kiro-sidecar` when present,
-falls back to `target/debug/kiro-sidecar`, and finally falls back to `cargo run`.
+Ensure `~/.local/bin` is on `PATH`, then verify the installation:
 
-## Commands
+```bash
+kiro-sidecar status
+```
+
+The `bin/kiro-sidecar` wrapper runs `target/release/kiro-sidecar` when
+present, falls back to `target/debug/kiro-sidecar`, and finally falls back to
+`cargo run`.
+
+You can also run the wrapper directly without adding it to `PATH`:
+
+```bash
+./bin/kiro-sidecar status
+```
+
+## Usage
 
 ```bash
 kiro-sidecar explore "question"
@@ -69,22 +93,15 @@ command default. Legacy `KIRO_TRUST_TOOLS` and `KIRO_EDIT_TRUST_TOOLS` may
 narrow built-in defaults, but they cannot add extra tools to those defaults.
 Define an explicit profile instead when a run needs additional tools.
 
-## Local PATH Setup
+## PATH Setup
 
-Source of truth:
-
-```bash
-$PROJECT_ROOT
-```
-
-Preferred PATH entry:
+If this repository is moved after installation, update the symlink:
 
 ```bash
-$PROJECT_ROOT/bin
+ln -sf "$PROJECT_ROOT/bin/kiro-sidecar" ~/.local/bin/kiro-sidecar
 ```
 
-If you prefer keeping `~/.local/bin` as the only PATH entry, symlink
-`~/.local/bin/kiro-sidecar` to `bin/kiro-sidecar` in this project.
+Replace `$PROJECT_ROOT` with the repository path.
 
 ## Task JSON
 
@@ -150,3 +167,7 @@ task artifacts in an existing parallel run.
 - `KIRO_TIMEOUT_SECONDS`: max seconds for one Kiro chat run, default `1200`.
 - `KIRO_TMP_ROOT`: temp directory root, default `/private/tmp`.
 - `KIRO_AGENT_DIR`: Kiro agent directory, default `.kiro/agents`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
