@@ -1,0 +1,6 @@
+interface:
+  display_name: "Kiro Sidecar Codex"
+  short_description: "Route Codex work through Kiro Sidecar"
+  default_prompt: "Use $kiro-sidecar-codex to review this repository with Kiro Sidecar."
+policy:
+  allow_implicit_invocation: true

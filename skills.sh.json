@@ -1,0 +1,11 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "Codex",
+      "description": "Skills for using Kiro Sidecar from Codex.",
+      "skills": ["kiro-sidecar-codex"]
+    }
+  ]
+}
