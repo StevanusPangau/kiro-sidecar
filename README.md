@@ -15,7 +15,7 @@ read-heavy exploration, reviews, patch drafting, and bounded edits.
 ## Install From Source
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/StevanusPangau/kiro-sidecar.git
 cd kiro-sidecar
 cargo build --release
 mkdir -p ~/.local/bin
@@ -37,6 +37,115 @@ You can also run the wrapper directly without adding it to `PATH`:
 ```bash
 ./bin/kiro-sidecar status
 ```
+
+## Codex Skill and AGENTS.md Setup
+
+This repository includes an installable agent skill at
+`skills/kiro-sidecar-codex/`. Use the skill when you want Codex to remember the
+Kiro Sidecar workflow on demand. Use `AGENTS.md` when you want the policy active
+before any skill trigger.
+
+Install the skill from this checkout:
+
+```bash
+npx skills add . --skill kiro-sidecar-codex -a codex
+```
+
+Install from GitHub:
+
+```bash
+npx skills add https://github.com/StevanusPangau/kiro-sidecar --skill kiro-sidecar-codex -a codex
+```
+
+Project scope is the default. To install it globally for your Codex setup:
+
+```bash
+npx skills add https://github.com/StevanusPangau/kiro-sidecar --skill kiro-sidecar-codex -a codex -g
+```
+
+Update project or global installs:
+
+```bash
+npx skills update kiro-sidecar-codex -p -y
+npx skills update kiro-sidecar-codex -g -y
+```
+
+Let the `skills` CLI choose the Codex skill destination for `-a codex`. The
+`skills.sh` CLI currently documents Codex project installs under
+`.agents/skills` and global installs under `~/.codex/skills`; current Codex docs
+also document repo skills under `.agents/skills` and user skills under
+`$HOME/.agents/skills`. Prefer the CLI or your active Codex docs over hardcoded
+manual paths.
+
+Recommended global Codex instructions, for `~/.codex/AGENTS.md`:
+
+```md
+## Kiro CLI Default External Agent
+
+Use Kiro CLI as the default external sidecar agent when the user asks for a
+review, when independent codebase exploration would help, or when bounded
+sidecar analysis can save Codex context. If the user asks for a sub-agent
+without specifying Codex, interpret the default as Kiro CLI.
+
+Default Kiro usage:
+
+- Prefer `kiro-sidecar` over raw `kiro-cli`; ensure it resolves on `PATH`.
+- Keep Kiro read-only by default.
+- For uncommitted-change reviews, run
+  `kiro-sidecar review "optional focused review prompt"`.
+- For codebase exploration, run
+  `kiro-sidecar explore "concrete bounded question"`.
+- For questions about Kiro CLI behavior, run
+  `kiro-sidecar help "question"`.
+- For focused review after a Kiro draft or edit, run
+  `kiro-sidecar audit-diff "optional focused audit prompt"`.
+- For hygiene checks, run `kiro-sidecar status`. If it reports sidecar traces,
+  run `kiro-sidecar cleanup --all-sidecar` before finishing.
+
+Write delegation:
+
+- Use writer modes only after Codex has decided the scope and explicit path
+  allowlists.
+- Low risk: `kiro-sidecar edit --allow PATH_GLOB "concrete edit request"`.
+- Medium risk: `kiro-sidecar edit-worktree --allow PATH_GLOB "concrete edit request"`
+  or `kiro-sidecar patch --allow PATH_GLOB "concrete patch request"`.
+- Parallel write work must use `kiro-sidecar parallel-worktree`, not direct
+  `edit`.
+- High-risk auth, secrets, payments, deployment config, database migrations,
+  concurrency, data integrity, and broad architecture changes stay with Codex;
+  Kiro may only `explore`, `review`, or `audit-diff`.
+- After every Kiro writer run, inspect the diff yourself and run targeted
+  tests/lint before finalizing.
+- Do not pass `--trust-all-tools`, `execute_bash`, shell-capable tools, or
+  unbounded write access to Kiro.
+```
+
+Recommended project instructions, for any repository `AGENTS.md`:
+
+```md
+## Kiro Sidecar Usage
+
+- This repository may use `kiro-sidecar` for bounded Codex/Kiro collaboration.
+- Use `kiro-sidecar review "focus"` for independent review of uncommitted
+  changes.
+- Use `kiro-sidecar explore "question"` for bounded codebase exploration before
+  broad or ambiguous work.
+- Keep Kiro read-only unless Codex has chosen an explicit writer mode and
+  path allowlist.
+- Writer output is draft work. Codex must inspect the diff and run this
+  repository's relevant tests or lint before finalizing.
+- Prefer `kiro-sidecar edit-worktree` or `kiro-sidecar patch` for medium-risk
+  changes so the main working tree stays under Codex review.
+- Keep auth, secrets, deployment config, migrations, concurrency, and data
+  integrity changes with Codex; Kiro may only review or explore those areas.
+- Run `kiro-sidecar cleanup --all-sidecar` if `kiro-sidecar status` reports
+  temporary sidecar files, logs, or agents.
+```
+
+Only put this project's Rust build/test commands in a repository `AGENTS.md`
+when that repository is the `kiro-sidecar` source itself. For normal consuming
+projects, the `AGENTS.md` section should focus on how Codex uses
+`kiro-sidecar`, not how to build this wrapper.
 
 ## Usage
 

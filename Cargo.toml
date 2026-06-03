@@ -1,6 +1,6 @@
 [package]
 name = "kiro-sidecar"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Parallel-safe Kiro CLI sidecar orchestration for Codex"
 license = "MIT"

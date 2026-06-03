@@ -15,18 +15,18 @@ Integration tests (`tests/cli_fake.rs`) use `assert_cmd`, `predicates`, and `tem
 
 Single-crate async CLI (`tokio` multi-threaded runtime, `clap` derive).
 
-| Module | Responsibility |
-|--------|---------------|
-| `cli.rs` | Clap command definitions and dispatch (~1k lines, the main entry) |
-| `parallel.rs` | Fan-out orchestration with concurrency, dependencies, resources |
-| `writer.rs` | Bounded edit and worktree edit flows with write-guard |
-| `kiro.rs` | Spawns and communicates with the real `kiro-cli` process |
-| `profiles.rs` | Permission profile resolution (built-in + project TOML) |
-| `task_schema.rs` | Task JSON validation and loading |
-| `git_utils.rs` | Git operations (diff, status, worktree management) |
-| `config.rs` | Constants, default deny globs, structured output templates |
-| `events.rs` | JSONL event logging for parallel runs |
-| `paths.rs` | Run ID generation, artifact paths, glob normalization |
+| Module           | Responsibility                                                    |
+| ---------------- | ----------------------------------------------------------------- |
+| `cli.rs`         | Clap command definitions and dispatch (~1k lines, the main entry) |
+| `parallel.rs`    | Fan-out orchestration with concurrency, dependencies, resources   |
+| `writer.rs`      | Bounded edit and worktree edit flows with write-guard             |
+| `kiro.rs`        | Spawns and communicates with the real `kiro-cli` process          |
+| `profiles.rs`    | Permission profile resolution (built-in + project TOML)           |
+| `task_schema.rs` | Task JSON validation and loading                                  |
+| `git_utils.rs`   | Git operations (diff, status, worktree management)                |
+| `config.rs`      | Constants, default deny globs, structured output templates        |
+| `events.rs`      | JSONL event logging for parallel runs                             |
+| `paths.rs`       | Run ID generation, artifact paths, glob normalization             |
 
 ## Conventions
 
@@ -51,6 +51,6 @@ Single-crate async CLI (`tokio` multi-threaded runtime, `clap` derive).
 ## Gotchas
 
 - The `__write-guard` subcommand is intentionally hidden from help output; it's invoked as a pre-write hook by the writer module.
-- `KIRO_TRUST_TOOLS` and `KIRO_EDIT_TRUST_TOOLS` can only *narrow* built-in profiles, never add tools. Use explicit profile definitions to add capabilities.
+- `KIRO_TRUST_TOOLS` and `KIRO_EDIT_TRUST_TOOLS` can only _narrow_ built-in profiles, never add tools. Use explicit profile definitions to add capabilities.
 - Parallel write tasks use git worktrees and return patches; they never modify the working tree directly.
 - The test suite requires `git` on PATH and creates real git repos in temp directories.
