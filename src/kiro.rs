@@ -81,9 +81,13 @@ pub async fn run_kiro(
         "--no-interactive".to_string(),
         "--model".to_string(),
         config.model.clone(),
-        "--wrap".to_string(),
-        "never".to_string(),
     ];
+    if let Some(effort) = &config.effort {
+        args.push("--effort".to_string());
+        args.push(effort.clone());
+    }
+    args.push("--wrap".to_string());
+    args.push("never".to_string());
     if let Some(agent) = agent {
         args.push("--agent".to_string());
         args.push(agent.to_string());

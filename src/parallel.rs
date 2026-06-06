@@ -8,6 +8,7 @@ use crate::task_schema::{dependency_batches, Task};
 use crate::writer::{worktree_edit, EditOutcome, EditRequest};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -432,9 +433,20 @@ async fn run_task_with_retries(
     heartbeat_stop.store(true, Ordering::Relaxed);
     heartbeat.abort();
     let _ = std::fs::write(task_dir.join("output.txt"), &record.output);
+    let patch_file = task_dir.join("worktree.patch");
     let metadata = serde_json::json!({
         "task": &task,
         "record": &record,
+        "execution": {
+            "model": task.model.as_deref().unwrap_or(&config.model),
+            "effort": task.effort.as_deref().or(config.effort.as_deref()),
+            "profile": &record.profile,
+            "attempts": record.attempts
+        },
+        "artifacts": {
+            "output_sha256": sha256_hex(record.output.as_bytes()),
+            "worktree_patch_sha256": sha256_file(&patch_file)
+        },
         "finished_at": utc_timestamp()
     });
     let _ = std::fs::write(
@@ -463,6 +475,12 @@ async fn worker_attempt(
     let mut task_config = config.clone();
     if let Some(timeout_seconds) = task.timeout_seconds {
         task_config.timeout_seconds = timeout_seconds;
+    }
+    if let Some(model) = &task.model {
+        task_config.model = model.clone();
+    }
+    if let Some(effort) = &task.effort {
+        task_config.effort = Some(effort.clone());
     }
     let trust_tools = profile.trust_tools();
     let (returncode, output) = match command {
@@ -683,6 +701,14 @@ fn task_record_dir(tasks_root: &Path, task_id: &str) -> String {
         .join(safe_artifact_id(task_id).unwrap_or_else(|| "invalid-task-id".to_string()))
         .display()
         .to_string()
+}
+
+fn sha256_file(path: &Path) -> Option<String> {
+    std::fs::read(path).ok().map(|bytes| sha256_hex(&bytes))
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 async fn write_record(path: &Path, lock: &Mutex<()>, record: &TaskRecord) -> Result<()> {

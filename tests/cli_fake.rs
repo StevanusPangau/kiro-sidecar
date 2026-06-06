@@ -153,6 +153,26 @@ case "${FAKE_KIRO_MODE:-}" in
       fi
     done
     ;;
+  print_effort)
+    model=""
+    effort=""
+    previous=""
+    for arg in "$@"; do
+      if [[ "$previous" == "--model" ]]; then
+        model="$arg"
+      fi
+      if [[ "$previous" == "--effort" ]]; then
+        effort="$arg"
+      fi
+      previous="$arg"
+    done
+    printf 'MODEL:%s\n' "$model"
+    if [[ -n "$effort" ]]; then
+      printf 'EFFORT:%s\n' "$effort"
+    else
+      printf 'EFFORT:unset\n'
+    fi
+    ;;
   fail_on_fail)
     joined="$*"
     if [[ "$joined" == *"FAIL"* ]]; then
@@ -195,6 +215,52 @@ fn make_executable(path: &Path) -> Result<(), Box<dyn Error>> {
         permissions.set_mode(0o755);
         fs::set_permissions(path, permissions)?;
     }
+    Ok(())
+}
+
+#[test]
+fn explore_only_passes_effort_when_configured() -> Result<(), Box<dyn Error>> {
+    let tmp = TempDir::new()?;
+    let repo = tmp.path().join("repo");
+    fs::create_dir(&repo)?;
+    init_repo(&repo)?;
+    let fake = make_fake_kiro(tmp.path())?;
+
+    cli(&repo, &fake)?
+        .env("FAKE_KIRO_MODE", "print_effort")
+        .env_remove("KIRO_EFFORT")
+        .args(["explore", "inspect"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("EFFORT:unset"));
+
+    cli(&repo, &fake)?
+        .env("FAKE_KIRO_MODE", "print_effort")
+        .env("KIRO_EFFORT", "high")
+        .args(["explore", "inspect"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("EFFORT:high"));
+    Ok(())
+}
+
+#[test]
+fn explore_rejects_unknown_env_effort() -> Result<(), Box<dyn Error>> {
+    let tmp = TempDir::new()?;
+    let repo = tmp.path().join("repo");
+    fs::create_dir(&repo)?;
+    init_repo(&repo)?;
+    let fake = make_fake_kiro(tmp.path())?;
+
+    cli(&repo, &fake)?
+        .env("KIRO_EFFORT", "extreme")
+        .args(["explore", "inspect"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "KIRO_EFFORT must be one of low, medium, high, xhigh, max",
+        ));
     Ok(())
 }
 
@@ -342,6 +408,75 @@ fn parallel_explore_writes_results() -> Result<(), Box<dyn Error>> {
     assert_eq!(lines.lines().count(), 2);
     assert!(lines.contains("\"id\":\"a\""));
     assert!(lines.contains("\"id\":\"b\""));
+    Ok(())
+}
+
+#[test]
+fn parallel_tasks_can_override_model_and_effort() -> Result<(), Box<dyn Error>> {
+    let tmp = TempDir::new()?;
+    let repo = tmp.path().join("repo");
+    fs::create_dir(&repo)?;
+    init_repo(&repo)?;
+    let fake = make_fake_kiro(tmp.path())?;
+    fs::write(
+        repo.join("tasks.json"),
+        serde_json::to_string(&json!([
+            {"id": "fast-scan", "prompt": "A", "model": "claude-haiku-4.5", "effort": "low"},
+            {"id": "deep-review", "prompt": "B", "model": "claude-opus-4.6", "effort": "max"}
+        ]))?,
+    )?;
+
+    cli(&repo, &fake)?
+        .env("FAKE_KIRO_MODE", "print_effort")
+        .env("KIRO_MODEL", "claude-sonnet-4.6")
+        .env("KIRO_EFFORT", "medium")
+        .args(["parallel-explore", "tasks.json", "--max-concurrency", "1"])
+        .assert()
+        .success();
+
+    let run_id = latest_run_id(&repo)?;
+    let fast_dir = repo.join(format!(".kiro-sidecar/runs/{run_id}/tasks/fast-scan"));
+    let deep_dir = repo.join(format!(".kiro-sidecar/runs/{run_id}/tasks/deep-review"));
+    assert!(fs::read_to_string(fast_dir.join("output.txt"))?.contains("MODEL:claude-haiku-4.5"));
+    assert!(fs::read_to_string(fast_dir.join("output.txt"))?.contains("EFFORT:low"));
+    assert!(fs::read_to_string(deep_dir.join("output.txt"))?.contains("MODEL:claude-opus-4.6"));
+    assert!(fs::read_to_string(deep_dir.join("output.txt"))?.contains("EFFORT:max"));
+
+    let metadata: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(deep_dir.join("metadata.json"))?)?;
+    assert_eq!(metadata["execution"]["model"], "claude-opus-4.6");
+    assert_eq!(metadata["execution"]["effort"], "max");
+    assert!(metadata["artifacts"]["output_sha256"]
+        .as_str()
+        .is_some_and(|value| value.len() == 64));
+    Ok(())
+}
+
+#[test]
+fn parallel_metadata_uses_null_for_unset_effort() -> Result<(), Box<dyn Error>> {
+    let tmp = TempDir::new()?;
+    let repo = tmp.path().join("repo");
+    fs::create_dir(&repo)?;
+    init_repo(&repo)?;
+    let fake = make_fake_kiro(tmp.path())?;
+    fs::write(
+        repo.join("tasks.json"),
+        serde_json::to_string(&json!([{"id": "scan", "prompt": "A"}]))?,
+    )?;
+
+    cli(&repo, &fake)?
+        .env("FAKE_KIRO_MODE", "print_effort")
+        .env_remove("KIRO_EFFORT")
+        .args(["parallel-explore", "tasks.json", "--max-concurrency", "1"])
+        .assert()
+        .success();
+
+    let run_id = latest_run_id(&repo)?;
+    let task_dir = repo.join(format!(".kiro-sidecar/runs/{run_id}/tasks/scan"));
+    assert!(fs::read_to_string(task_dir.join("output.txt"))?.contains("EFFORT:unset"));
+    let metadata: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(task_dir.join("metadata.json"))?)?;
+    assert!(metadata["execution"]["effort"].is_null());
     Ok(())
 }
 
@@ -1264,11 +1399,13 @@ fn status_handles_missing_kiro_cli() -> Result<(), Box<dyn Error>> {
     command
         .current_dir(&repo)
         .env("KIRO_CLI", tmp.path().join("missing-kiro-cli"))
+        .env_remove("KIRO_EFFORT")
         .arg("status")
         .assert()
         .success()
         .stdout(predicate::str::contains("- resolved: not found"))
         .stdout(predicate::str::contains("- version: not found"))
+        .stdout(predicate::str::contains("EFFORT:\n- from Kiro settings"))
         .stderr(predicate::str::is_empty());
     Ok(())
 }

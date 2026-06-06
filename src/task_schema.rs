@@ -1,3 +1,4 @@
+use crate::config::validate_effort;
 use crate::paths::{normalize_repo_glob, safe_artifact_id};
 use crate::profiles::ProfileCatalog;
 use anyhow::{anyhow, bail, Context, Result};
@@ -9,6 +10,8 @@ use std::path::Path;
 pub struct Task {
     pub id: String,
     pub prompt: String,
+    pub model: Option<String>,
+    pub effort: Option<String>,
     pub profile: Option<String>,
     pub allow: Vec<String>,
     pub deny: Vec<String>,
@@ -25,6 +28,8 @@ pub struct Task {
 struct RawTask {
     id: Option<String>,
     prompt: String,
+    model: Option<String>,
+    effort: Option<String>,
     profile: Option<String>,
     #[serde(default)]
     allow: Vec<String>,
@@ -80,6 +85,8 @@ pub fn load_tasks(
         if prompt.is_empty() {
             bail!("task `{id}` requires prompt");
         }
+        let model = optional_non_empty_string(&id, "model", item.model)?;
+        let effort = optional_effort(&id, item.effort)?;
         if let Some(profile) = &item.profile {
             if !profiles.contains(profile) {
                 bail!("task `{id}` references unknown profile `{profile}`");
@@ -99,6 +106,8 @@ pub fn load_tasks(
         tasks.push(Task {
             id,
             prompt,
+            model,
+            effort,
             profile: item.profile,
             allow: item.allow,
             deny: item.deny,
@@ -171,6 +180,29 @@ fn validate_globs(id: &str, field: &str, values: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn optional_non_empty_string(
+    id: &str,
+    field: &str,
+    value: Option<String>,
+) -> Result<Option<String>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        bail!("task `{id}` {field} must be non-empty when set");
+    }
+    Ok(Some(value))
+}
+
+fn optional_effort(id: &str, value: Option<String>) -> Result<Option<String>> {
+    let Some(value) = optional_non_empty_string(id, "effort", value)? else {
+        return Ok(None);
+    };
+    validate_effort(&format!("task `{id}` effort"), &value)?;
+    Ok(Some(value))
+}
+
 fn validate_dependencies(tasks: &[Task]) -> Result<()> {
     let ids = tasks
         .iter()
@@ -196,6 +228,8 @@ mod tests {
         Task {
             id: id.to_string(),
             prompt: "prompt".to_string(),
+            model: None,
+            effort: None,
             profile: None,
             allow: Vec::new(),
             deny: Vec::new(),
@@ -265,6 +299,8 @@ mod tests {
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, "t1");
         assert_eq!(tasks[0].prompt, "do something");
+        assert_eq!(tasks[0].model, None);
+        assert_eq!(tasks[0].effort, None);
         Ok(())
     }
 
@@ -298,6 +334,30 @@ mod tests {
         let profiles = catalog();
         let error = load_tasks(&path, &profiles, TaskValidationMode::Generic).unwrap_err();
         assert!(error.to_string().contains("requires prompt"));
+    }
+
+    #[test]
+    fn load_tasks_rejects_empty_model() {
+        let tmp = TempDir::new().unwrap();
+        let path = write_task_file(
+            tmp.path(),
+            r#"[{"id": "t1", "prompt": "x", "model": "   "}]"#,
+        );
+        let profiles = catalog();
+        let error = load_tasks(&path, &profiles, TaskValidationMode::Generic).unwrap_err();
+        assert!(error.to_string().contains("model must be non-empty"));
+    }
+
+    #[test]
+    fn load_tasks_rejects_unknown_effort() {
+        let tmp = TempDir::new().unwrap();
+        let path = write_task_file(
+            tmp.path(),
+            r#"[{"id": "t1", "prompt": "x", "effort": "extreme"}]"#,
+        );
+        let profiles = catalog();
+        let error = load_tasks(&path, &profiles, TaskValidationMode::Generic).unwrap_err();
+        assert!(error.to_string().contains("effort must be one of"));
     }
 
     #[test]
@@ -420,6 +480,8 @@ mod tests {
             r#"[{
                 "id": "full",
                 "prompt": "do work",
+                "model": "claude-sonnet-4.6",
+                "effort": "medium",
                 "profile": "read-only",
                 "allow": ["src/**"],
                 "deny": ["src/secret/**"],
@@ -436,6 +498,8 @@ mod tests {
         let tasks = load_tasks(&path, &profiles, TaskValidationMode::Generic)?;
         let t = &tasks[0];
         assert_eq!(t.id, "full");
+        assert_eq!(t.model.as_deref(), Some("claude-sonnet-4.6"));
+        assert_eq!(t.effort.as_deref(), Some("medium"));
         assert_eq!(t.profile.as_deref(), Some("read-only"));
         assert_eq!(t.timeout_seconds, Some(600));
         assert_eq!(t.tags, vec!["security"]);
