@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.2.0] - 2026-06-07
+
+### Added
+
+- Optional `KIRO_EFFORT` forwarding to Kiro CLI 2.6.0+ for per-run effort
+  overrides while preserving persisted Kiro model settings by default.
+- Effort override visibility in `kiro-sidecar status`.
+- Per-task `model` and `effort` overrides for parallel task JSON.
+- Effective runtime settings and artifact SHA-256 hashes in task metadata.
+
+### Changed
+
+- `KIRO_EFFORT` is validated before launching Kiro, and unset task metadata now
+  records effort as `null`.
+
 ## [0.1.1] - 2026-06-03
 
 ### Added
@@ -46,5 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python kiro-sidecar package (replaced by Rust CLI)
 - Python skills (replaced by Rust skill)
 
+[Unreleased]: https://github.com/StevanusPangau/kiro-sidecar/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/StevanusPangau/kiro-sidecar/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/StevanusPangau/kiro-sidecar/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/StevanusPangau/kiro-sidecar/releases/tag/v0.1.0

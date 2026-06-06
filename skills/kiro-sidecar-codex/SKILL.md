@@ -32,6 +32,7 @@ Use `kiro-sidecar` as Codex's bounded external Kiro agent. Codex stays the plann
 - Parallel read work: use JSON tasks with `parallel-explore` or `parallel-review`.
 - Parallel write work: use `parallel-worktree`, not direct `edit`.
 - Never give Kiro `--trust-all-tools`, shell-capable tools, or unbounded write access.
+- Use task-level `model` and `effort` in parallel task JSON when different worker roles need different depth or cost profiles.
 - After any writer or patch run, inspect Kiro's structured output and the diff, then run targeted tests or lint.
 
 Expected Kiro writer sections are `CHANGED_FILES`, `SUMMARY`, `DECISIONS`, `UNCERTAINTIES`, `TESTS_NOT_RUN`, and `RISK_NOTES`.

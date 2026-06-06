@@ -1,10 +1,13 @@
 use std::env;
 use std::path::PathBuf;
 
+use anyhow::{bail, Result};
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub kiro_cli: String,
     pub model: String,
+    pub effort: Option<String>,
     pub read_tools: String,
     pub edit_tools: String,
     pub tmp_root: PathBuf,
@@ -13,10 +16,19 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_env() -> Self {
-        Self {
+    pub fn from_env() -> Result<Self> {
+        let effort = env::var("KIRO_EFFORT")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        if let Some(value) = &effort {
+            validate_effort("KIRO_EFFORT", value)?;
+        }
+
+        Ok(Self {
             kiro_cli: env::var("KIRO_CLI").unwrap_or_else(|_| "kiro-cli".to_string()),
             model: env::var("KIRO_MODEL").unwrap_or_else(|_| "claude-opus-4.6".to_string()),
+            effort,
             read_tools: env::var("KIRO_TRUST_TOOLS")
                 .unwrap_or_else(|_| "fs_read,grep,glob".to_string()),
             edit_tools: env::var("KIRO_EDIT_TRUST_TOOLS")
@@ -28,8 +40,15 @@ impl Config {
                 env::var("KIRO_AGENT_DIR").unwrap_or_else(|_| ".kiro/agents".to_string()),
             ),
             timeout_seconds: env_u64("KIRO_TIMEOUT_SECONDS", 1200),
-        }
+        })
     }
+}
+
+pub fn validate_effort(label: &str, value: &str) -> Result<()> {
+    if matches!(value, "low" | "medium" | "high" | "xhigh" | "max") {
+        return Ok(());
+    }
+    bail!("{label} must be one of low, medium, high, xhigh, max")
 }
 
 fn env_u64(name: &str, default: u64) -> u64 {

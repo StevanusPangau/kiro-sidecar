@@ -46,7 +46,12 @@ Single-crate async CLI (`tokio` multi-threaded runtime, `clap` derive).
 - `KIRO_CLI` - path to Kiro CLI executable (useful for faking in tests)
 - `KIRO_TMP_ROOT` - temp directory root for worktrees
 - `KIRO_MODEL` - model override (default `claude-opus-4.6`)
+- `KIRO_EFFORT` - optional Kiro CLI 2.6.0+ effort override; invalid values fail before launching Kiro
 - `KIRO_TIMEOUT_SECONDS` - per-run timeout (default 1200)
+
+Parallel task JSON may override `model` and `effort` per task. Keep fast
+read-heavy scan tasks on cheaper/faster settings and reserve `effort=max` for
+review, security, and architecture tasks that need deeper reasoning.
 
 ## Gotchas
 

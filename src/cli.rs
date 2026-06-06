@@ -148,7 +148,7 @@ pub async fn run() -> Result<i32> {
         println!();
         return Ok(0);
     };
-    let config = Config::from_env();
+    let config = Config::from_env()?;
     let cwd = std::env::current_dir()?;
     let root = repo_root(&cwd).await;
     let load_profiles = || ProfileCatalog::load(&root);
@@ -565,6 +565,10 @@ async fn status(config: &Config, cwd: &Path, profiles: &ProfileCatalog) -> Resul
         kiro_version(config).await
     );
     println!("MODEL:\n- {}", config.model);
+    println!(
+        "EFFORT:\n- {}",
+        config.effort.as_deref().unwrap_or("from Kiro settings")
+    );
     println!(
         "TRUST_TOOLS:\n- read_only: {}\n- edit: {}",
         config.read_tools, config.edit_tools

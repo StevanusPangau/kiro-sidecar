@@ -12,6 +12,9 @@ read-heavy exploration, reviews, patch drafting, and bounded edits.
 - Kiro CLI available as `kiro-cli` on `PATH`, or set `KIRO_CLI` to the
   executable path.
 
+Kiro CLI 2.6.0 or newer is required only when using the optional
+`KIRO_EFFORT` override.
+
 ## Install From Source
 
 ```bash
@@ -202,6 +205,12 @@ command default. Legacy `KIRO_TRUST_TOOLS` and `KIRO_EDIT_TRUST_TOOLS` may
 narrow built-in defaults, but they cannot add extra tools to those defaults.
 Define an explicit profile instead when a run needs additional tools.
 
+Parallel task JSON can also override the Kiro model and effort per task with
+`model` and `effort`. Use cheaper or faster models for broad read-heavy scans,
+and reserve higher-effort models for review, security, and architecture tasks.
+If these fields are omitted, the task inherits `KIRO_MODEL` and `KIRO_EFFORT`;
+if `KIRO_EFFORT` is also omitted, Kiro uses its persisted model settings.
+
 ## PATH Setup
 
 If this repository is moved after installation, update the symlink:
@@ -219,6 +228,8 @@ Replace `$PROJECT_ROOT` with the repository path.
   {
     "id": "security",
     "prompt": "Review security risks only.",
+    "model": "claude-opus-4.6",
+    "effort": "max",
     "profile": "read-only",
     "allow": [],
     "deny": [],
@@ -249,6 +260,27 @@ scheduling new tasks after a failure is observed; tasks already running are
 allowed to finish. `accept` and `reject` only record decisions for generated
 task artifacts in an existing parallel run.
 
+`metadata.json` records the effective model, effort, profile, attempt count,
+and SHA-256 hashes for the task output and any worktree patch. Effort is `null`
+when the wrapper delegates effort selection to persisted Kiro settings. Treat
+these artifacts as the audit trail for Codex's final review.
+
+## Codex Subagent Alignment
+
+Codex native subagents provide inspectable child threads, custom agent roles,
+per-agent model and reasoning settings, and parent sandbox inheritance. Kiro
+Sidecar is an external sidecar, not a native Codex thread, so it does not expose
+`/agent` steering or Codex's approval overlay. It deliberately replaces the
+common read-heavy and patch-drafting use cases with bounded CLI runs:
+
+- `parallel-explore` and `parallel-review` map to read-only specialized
+  subagent scans.
+- `parallel-worktree` maps to isolated implementation workers that return
+  patches for Codex review.
+- Task-level `model` and `effort` mirror per-agent model/reasoning choices.
+- Profiles and writer allowlists keep the default tool surface narrower than a
+  general-purpose native worker.
+
 ## Safety Model
 
 - Kiro is read-only by default.
@@ -269,6 +301,10 @@ task artifacts in an existing parallel run.
 
 - `KIRO_CLI`: Kiro CLI executable, default `kiro-cli`.
 - `KIRO_MODEL`: Kiro model, default `claude-opus-4.6`.
+- `KIRO_EFFORT`: optional per-run effort override passed to Kiro CLI 2.6.0+
+  as `chat --effort`. Valid values are `low`, `medium`, `high`, `xhigh`, and
+  `max`; invalid values fail before launching Kiro. When unset, Kiro uses its
+  persisted model settings.
 - `KIRO_TRUST_TOOLS`: read-only tools, default `fs_read,grep,glob`; can only
   narrow the built-in profile.
 - `KIRO_EDIT_TRUST_TOOLS`: writer tools, default `fs_read,fs_write,grep,glob`;
