@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-09
+
+### Added
+
+- Optional `review_loop` task JSON support for `parallel-worktree`, letting a
+  read-only Kiro reviewer gate generated patches and request bounded worker
+  revisions before Codex performs the final review.
+- Review-loop artifact metadata for status, iteration count, final verdict, and
+  reviewer output hashes.
+- Validation coverage for invalid `review_loop` tokens, unsupported parallel
+  commands, reviewer failures, unknown verdicts, exhausted loops, and retry
+  behavior inside worker iterations.
+
+### Changed
+
+- Documented `review_loop` usage in the README and Codex skill guidance,
+  including safe `parallel-worktree` defaults and the 12,000-character reviewer
+  feedback cap for follow-up worker prompts.
+- Hardened exhausted review loops so the final patch is promoted only when the
+  expected `worktree.patch` artifact exists.
+
 ## [0.2.0] - 2026-06-07
 
 ### Added
@@ -63,7 +84,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python kiro-sidecar package (replaced by Rust CLI)
 - Python skills (replaced by Rust skill)
 
-[Unreleased]: https://github.com/StevanusPangau/kiro-sidecar/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/StevanusPangau/kiro-sidecar/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/StevanusPangau/kiro-sidecar/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/StevanusPangau/kiro-sidecar/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/StevanusPangau/kiro-sidecar/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/StevanusPangau/kiro-sidecar/releases/tag/v0.1.0

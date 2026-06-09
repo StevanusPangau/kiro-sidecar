@@ -114,6 +114,9 @@ Write delegation:
   or `kiro-sidecar patch --allow PATH_GLOB "concrete patch request"`.
 - Parallel write work must use `kiro-sidecar parallel-worktree`, not direct
   `edit`.
+- For bounded `parallel-worktree` tasks that benefit from an automatic reviewer
+  gate, add task-level `review_loop` with `max_iterations` usually `2`,
+  `approve_token = "APPROVED"`, and `revise_token = "NEEDS_CHANGES"`.
 - High-risk auth, secrets, payments, deployment config, database migrations,
   concurrency, data integrity, and broad architecture changes stay with Codex;
   Kiro may only `explore`, `review`, or `audit-diff`.
@@ -139,6 +142,9 @@ Recommended project instructions, for any repository `AGENTS.md`:
   repository's relevant tests or lint before finalizing.
 - Prefer `kiro-sidecar edit-worktree` or `kiro-sidecar patch` for medium-risk
   changes so the main working tree stays under Codex review.
+- Use task-level `review_loop` for bounded `parallel-worktree` tasks when a
+  read-only Kiro reviewer should gate a generated patch before Codex final
+  review.
 - Keep auth, secrets, deployment config, migrations, concurrency, and data
   integrity changes with Codex; Kiro may only review or explore those areas.
 - Run `kiro-sidecar cleanup --all-sidecar` if `kiro-sidecar status` reports
@@ -226,20 +232,26 @@ Replace `$PROJECT_ROOT` with the repository path.
 ```json
 [
   {
-    "id": "security",
-    "prompt": "Review security risks only.",
+    "id": "docs-copy",
+    "prompt": "Update the approved README wording and return a patch.",
     "model": "claude-opus-4.6",
     "effort": "max",
-    "profile": "read-only",
-    "allow": [],
+    "profile": "worktree-edit",
+    "allow": ["README.md"],
     "deny": [],
     "timeout_seconds": 900,
     "depends_on": [],
-    "expected_files": [],
-    "tags": ["security"],
-    "resource": "security-review",
+    "expected_files": ["README.md"],
+    "tags": ["docs"],
+    "resource": "readme-docs",
     "retry": 0,
-    "max_diff_lines": 400
+    "max_diff_lines": 400,
+    "review_loop": {
+      "max_iterations": 2,
+      "review_prompt": "Review this generated patch for correctness, safety, regressions, and missing tests. Start with APPROVED or NEEDS_CHANGES.",
+      "approve_token": "APPROVED",
+      "revise_token": "NEEDS_CHANGES"
+    }
   }
 ]
 ```
@@ -260,6 +272,16 @@ scheduling new tasks after a failure is observed; tasks already running are
 allowed to finish. `accept` and `reject` only record decisions for generated
 task artifacts in an existing parallel run.
 
+`review_loop` is optional and currently supported only by `parallel-worktree`.
+It runs the generated patch through a read-only Kiro reviewer after each
+successful worker iteration. If the first non-empty reviewer line starts with
+`approve_token`, the patch is promoted to the normal task artifact. If it
+starts with `revise_token`, the worker reruns with the reviewer feedback until
+`max_iterations` is reached. `retry` still handles execution failures only;
+review-loop iterations handle reviewer-requested patch revisions. Reviewer
+feedback passed into the next worker iteration is capped at 12,000 characters
+to keep follow-up prompts bounded.
+
 `metadata.json` records the effective model, effort, profile, attempt count,
 and SHA-256 hashes for the task output and any worktree patch. Effort is `null`
 when the wrapper delegates effort selection to persisted Kiro settings. Treat
@@ -277,6 +299,8 @@ common read-heavy and patch-drafting use cases with bounded CLI runs:
   subagent scans.
 - `parallel-worktree` maps to isolated implementation workers that return
   patches for Codex review.
+- `parallel-worktree` `review_loop` maps to an implementation worker plus a
+  read-only reviewer gate before Codex makes the final decision.
 - Task-level `model` and `effort` mirror per-agent model/reasoning choices.
 - Profiles and writer allowlists keep the default tool surface narrower than a
   general-purpose native worker.
