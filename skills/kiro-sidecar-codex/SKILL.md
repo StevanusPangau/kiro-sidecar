@@ -31,6 +31,10 @@ Use `kiro-sidecar` as Codex's bounded external Kiro agent. Codex stays the plann
 - Patch-only drafts: `kiro-sidecar patch --allow PATH_GLOB "specific request"`.
 - Parallel read work: use JSON tasks with `parallel-explore` or `parallel-review`.
 - Parallel write work: use `parallel-worktree`, not direct `edit`.
+- For bounded `parallel-worktree` tasks where a reviewer gate helps, add
+  task-level `review_loop` with `max_iterations` usually `2`,
+  `approve_token = "APPROVED"`, and `revise_token = "NEEDS_CHANGES"` so a
+  read-only Kiro reviewer can request revisions before Codex final review.
 - Never give Kiro `--trust-all-tools`, shell-capable tools, or unbounded write access.
 - Use task-level `model` and `effort` in parallel task JSON when different worker roles need different depth or cost profiles.
 - After any writer or patch run, inspect Kiro's structured output and the diff, then run targeted tests or lint.
@@ -48,6 +52,6 @@ When the user asks to configure Codex instructions for Kiro Sidecar:
 
 - Update only the requested scope: global `~/.codex/AGENTS.md`, project `AGENTS.md`, or a nested `AGENTS.override.md`.
 - Preserve existing instructions and append a small Kiro Sidecar section instead of replacing the whole file.
-- Include the default routing, read-only default, explicit write allowlists, Codex final-review requirement, and cleanup command.
+- Include the default routing, read-only default, explicit write allowlists, Codex final-review requirement, optional `review_loop` use for bounded `parallel-worktree` reviewer gates, and cleanup command.
 - For consuming projects, focus the AGENTS.md section on how Codex should use `kiro-sidecar`; do not add this wrapper source repository's Rust build/test commands unless the target repo is the `kiro-sidecar` source itself.
 - If the target repo contains a Kiro Sidecar README section, prefer its current snippet over recreating one from memory.

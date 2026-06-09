@@ -18,7 +18,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Parser)]
-#[command(name = "kiro-sidecar")]
+#[command(name = "kiro-sidecar", version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Parallel-safe Kiro CLI sidecar orchestration for Codex")]
 #[command(disable_help_subcommand = true)]
 struct Cli {

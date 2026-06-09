@@ -22,6 +22,15 @@ pub struct Task {
     pub resource: Option<String>,
     pub retry: u32,
     pub max_diff_lines: Option<usize>,
+    pub review_loop: Option<ReviewLoop>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ReviewLoop {
+    pub max_iterations: u32,
+    pub review_prompt: String,
+    pub approve_token: String,
+    pub revise_token: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,6 +55,8 @@ struct RawTask {
     #[serde(default)]
     retry: u32,
     max_diff_lines: Option<usize>,
+    #[serde(default)]
+    review_loop: Option<ReviewLoop>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -103,6 +114,7 @@ pub fn load_tasks(
         if matches!(item.max_diff_lines, Some(0)) {
             bail!("task `{id}` max_diff_lines must be greater than zero");
         }
+        let review_loop = validate_review_loop(&id, item.review_loop)?;
         tasks.push(Task {
             id,
             prompt,
@@ -118,6 +130,7 @@ pub fn load_tasks(
             resource: item.resource,
             retry: item.retry,
             max_diff_lines: item.max_diff_lines,
+            review_loop,
         });
     }
     validate_dependencies(&tasks)?;
@@ -203,6 +216,38 @@ fn optional_effort(id: &str, value: Option<String>) -> Result<Option<String>> {
     Ok(Some(value))
 }
 
+fn validate_review_loop(id: &str, value: Option<ReviewLoop>) -> Result<Option<ReviewLoop>> {
+    let Some(mut value) = value else {
+        return Ok(None);
+    };
+    if !(1..=5).contains(&value.max_iterations) {
+        bail!("task `{id}` review_loop.max_iterations must be between 1 and 5");
+    }
+    value.review_prompt = value.review_prompt.trim().to_string();
+    value.approve_token = value.approve_token.trim().to_string();
+    value.revise_token = value.revise_token.trim().to_string();
+    if value.review_prompt.is_empty() {
+        bail!("task `{id}` review_loop.review_prompt must be non-empty");
+    }
+    if value.approve_token.is_empty() {
+        bail!("task `{id}` review_loop.approve_token must be non-empty");
+    }
+    if value.revise_token.is_empty() {
+        bail!("task `{id}` review_loop.revise_token must be non-empty");
+    }
+    if value.approve_token == value.revise_token {
+        bail!("task `{id}` review_loop approve and revise tokens must differ");
+    }
+    if value.approve_token.starts_with(&value.revise_token)
+        || value.revise_token.starts_with(&value.approve_token)
+    {
+        bail!(
+            "task `{id}` review_loop approve and revise tokens must not be prefixes of each other"
+        );
+    }
+    Ok(Some(value))
+}
+
 fn validate_dependencies(tasks: &[Task]) -> Result<()> {
     let ids = tasks
         .iter()
@@ -240,6 +285,7 @@ mod tests {
             resource: None,
             retry: 0,
             max_diff_lines: None,
+            review_loop: None,
         }
     }
 
@@ -401,6 +447,106 @@ mod tests {
     }
 
     #[test]
+    fn load_tasks_accepts_review_loop() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let path = write_task_file(
+            tmp.path(),
+            r#"[{
+                "id": "loop",
+                "prompt": "x",
+                "review_loop": {
+                    "max_iterations": 2,
+                    "review_prompt": "Review patch",
+                    "approve_token": "APPROVED",
+                    "revise_token": "NEEDS_CHANGES"
+                }
+            }]"#,
+        );
+        let profiles = catalog();
+        let tasks = load_tasks(&path, &profiles, TaskValidationMode::Generic)?;
+        let review_loop = tasks[0].review_loop.as_ref().unwrap();
+        assert_eq!(review_loop.max_iterations, 2);
+        assert_eq!(review_loop.approve_token, "APPROVED");
+        assert_eq!(review_loop.revise_token, "NEEDS_CHANGES");
+        Ok(())
+    }
+
+    #[test]
+    fn load_tasks_rejects_invalid_review_loop() {
+        let tmp = TempDir::new().unwrap();
+        let profiles = catalog();
+        let path = write_task_file(
+            tmp.path(),
+            r#"[{
+                "id": "loop",
+                "prompt": "x",
+                "review_loop": {
+                    "max_iterations": 0,
+                    "review_prompt": "Review patch",
+                    "approve_token": "APPROVED",
+                    "revise_token": "NEEDS_CHANGES"
+                }
+            }]"#,
+        );
+        let error = load_tasks(&path, &profiles, TaskValidationMode::Generic).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("review_loop.max_iterations must be between 1 and 5"));
+
+        let path = write_task_file(
+            tmp.path(),
+            r#"[{
+                "id": "loop",
+                "prompt": "x",
+                "review_loop": {
+                    "max_iterations": 1,
+                    "review_prompt": " ",
+                    "approve_token": "APPROVED",
+                    "revise_token": "NEEDS_CHANGES"
+                }
+            }]"#,
+        );
+        let error = load_tasks(&path, &profiles, TaskValidationMode::Generic).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("review_loop.review_prompt must be non-empty"));
+
+        let path = write_task_file(
+            tmp.path(),
+            r#"[{
+                "id": "loop",
+                "prompt": "x",
+                "review_loop": {
+                    "max_iterations": 1,
+                    "review_prompt": "Review patch",
+                    "approve_token": "DONE",
+                    "revise_token": "DONE"
+                }
+            }]"#,
+        );
+        let error = load_tasks(&path, &profiles, TaskValidationMode::Generic).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("approve and revise tokens must differ"));
+
+        let path = write_task_file(
+            tmp.path(),
+            r#"[{
+                "id": "loop",
+                "prompt": "x",
+                "review_loop": {
+                    "max_iterations": 1,
+                    "review_prompt": "Review patch",
+                    "approve_token": "APPROVED",
+                    "revise_token": "APPROVED_PARTIAL"
+                }
+            }]"#,
+        );
+        let error = load_tasks(&path, &profiles, TaskValidationMode::Generic).unwrap_err();
+        assert!(error.to_string().contains("must not be prefixes"));
+    }
+
+    #[test]
     fn load_tasks_write_mode_requires_allow() {
         let tmp = TempDir::new().unwrap();
         let path = write_task_file(tmp.path(), r#"[{"id": "t1", "prompt": "x"}]"#);
@@ -491,7 +637,13 @@ mod tests {
                 "tags": ["security"],
                 "resource": "shared-db",
                 "retry": 2,
-                "max_diff_lines": 500
+                "max_diff_lines": 500,
+                "review_loop": {
+                    "max_iterations": 3,
+                    "review_prompt": "Review patch",
+                    "approve_token": "APPROVED",
+                    "revise_token": "NEEDS_CHANGES"
+                }
             }]"#,
         );
         let profiles = catalog();
@@ -506,6 +658,10 @@ mod tests {
         assert_eq!(t.resource.as_deref(), Some("shared-db"));
         assert_eq!(t.retry, 2);
         assert_eq!(t.max_diff_lines, Some(500));
+        assert_eq!(
+            t.review_loop.as_ref().map(|value| value.max_iterations),
+            Some(3)
+        );
         Ok(())
     }
 }

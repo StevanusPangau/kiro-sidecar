@@ -18,6 +18,19 @@ fn cli(repo: &Path, fake_kiro: &Path) -> Result<Command, Box<dyn Error>> {
     Ok(command)
 }
 
+#[test]
+fn cli_reports_package_version() -> Result<(), Box<dyn Error>> {
+    Command::cargo_bin("kiro-sidecar")?
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "kiro-sidecar {}",
+            env!("CARGO_PKG_VERSION")
+        )));
+    Ok(())
+}
+
 fn init_repo(path: &Path) -> Result<(), Box<dyn Error>> {
     run_git(path, &["init", "-q"])?;
     run_git(path, &["config", "user.email", "test@example.com"])?;
@@ -142,6 +155,92 @@ case "${FAKE_KIRO_MODE:-}" in
     printf -- '-original\n'
     printf '+patched\n'
     printf '```\n\nNO_EXTRA_TEXT_AFTER_PATCH\n'
+    ;;
+  review_loop_approved)
+    joined="$*"
+    if [[ "$joined" == *"Return the first non-empty line as either"* ]]; then
+      printf 'APPROVED\nready for Codex review\n'
+    else
+      if [[ -n "${FAKE_KIRO_ATTEMPTS_FILE:-}" ]]; then
+        printf 'attempt\n' >> "$FAKE_KIRO_ATTEMPTS_FILE"
+      fi
+      printf 'changed by fake kiro\n' > allowed.txt
+      printf 'CHANGED_FILES:\n- allowed.txt\n\nSUMMARY:\n- changed allowed\n'
+    fi
+    ;;
+  review_loop_revise_once)
+    joined="$*"
+    if [[ "$joined" == *"Return the first non-empty line as either"* ]]; then
+      count=0
+      if [[ -n "${FAKE_KIRO_REVIEW_FILE:-}" && -f "$FAKE_KIRO_REVIEW_FILE" ]]; then
+        count=$(wc -l < "$FAKE_KIRO_REVIEW_FILE")
+      fi
+      if [[ -n "${FAKE_KIRO_REVIEW_FILE:-}" ]]; then
+        printf 'review\n' >> "$FAKE_KIRO_REVIEW_FILE"
+      fi
+      if [[ "$count" -eq 0 ]]; then
+        printf 'NEEDS_CHANGES\nplease revise once\n'
+      else
+        printf 'APPROVED\nrevision accepted\n'
+      fi
+    else
+      if [[ -n "${FAKE_KIRO_ATTEMPTS_FILE:-}" ]]; then
+        printf 'attempt\n' >> "$FAKE_KIRO_ATTEMPTS_FILE"
+      fi
+      printf 'changed by fake kiro\n' > allowed.txt
+      printf 'CHANGED_FILES:\n- allowed.txt\n\nSUMMARY:\n- changed allowed\n'
+    fi
+    ;;
+  review_loop_needs_changes)
+    joined="$*"
+    if [[ "$joined" == *"Return the first non-empty line as either"* ]]; then
+      printf 'NEEDS_CHANGES\nkeep revising\n'
+    else
+      if [[ -n "${FAKE_KIRO_ATTEMPTS_FILE:-}" ]]; then
+        printf 'attempt\n' >> "$FAKE_KIRO_ATTEMPTS_FILE"
+      fi
+      printf 'changed by fake kiro\n' > allowed.txt
+      printf 'CHANGED_FILES:\n- allowed.txt\n\nSUMMARY:\n- changed allowed\n'
+    fi
+    ;;
+  review_loop_unknown)
+    joined="$*"
+    if [[ "$joined" == *"Return the first non-empty line as either"* ]]; then
+      printf 'MAYBE\nnot a valid verdict\n'
+    else
+      printf 'changed by fake kiro\n' > allowed.txt
+      printf 'CHANGED_FILES:\n- allowed.txt\n\nSUMMARY:\n- changed allowed\n'
+    fi
+    ;;
+  review_loop_review_fails)
+    joined="$*"
+    if [[ "$joined" == *"Return the first non-empty line as either"* ]]; then
+      printf 'review failed\n'
+      exit 9
+    else
+      printf 'changed by fake kiro\n' > allowed.txt
+      printf 'CHANGED_FILES:\n- allowed.txt\n\nSUMMARY:\n- changed allowed\n'
+    fi
+    ;;
+  review_loop_retry_then_approve)
+    joined="$*"
+    if [[ "$joined" == *"Return the first non-empty line as either"* ]]; then
+      printf 'APPROVED\nretry recovered\n'
+    else
+      count=0
+      if [[ -n "${FAKE_KIRO_ATTEMPTS_FILE:-}" && -f "$FAKE_KIRO_ATTEMPTS_FILE" ]]; then
+        count=$(wc -l < "$FAKE_KIRO_ATTEMPTS_FILE")
+      fi
+      if [[ -n "${FAKE_KIRO_ATTEMPTS_FILE:-}" ]]; then
+        printf 'attempt\n' >> "$FAKE_KIRO_ATTEMPTS_FILE"
+      fi
+      if [[ "$count" -eq 0 ]]; then
+        printf 'temporary worker failure\n'
+        exit 7
+      fi
+      printf 'changed by fake kiro\n' > allowed.txt
+      printf 'CHANGED_FILES:\n- allowed.txt\n\nSUMMARY:\n- changed allowed\n'
+    fi
     ;;
   parallel)
     printf 'CHANGED_FILES:\n- none\n\nSUMMARY:\n- parallel ok\n'
@@ -531,6 +630,293 @@ fn parallel_worktree_writes_patch_without_changing_main_tree() -> Result<(), Box
     let lines = fs::read_to_string(result_file)?;
     assert!(lines.contains("\"id\":\"worktree\""));
     assert!(lines.contains("changed by fake kiro"));
+    Ok(())
+}
+
+#[test]
+fn parallel_worktree_review_loop_approves_first_iteration() -> Result<(), Box<dyn Error>> {
+    let tmp = TempDir::new()?;
+    let repo = tmp.path().join("repo");
+    fs::create_dir(&repo)?;
+    init_repo(&repo)?;
+    let fake = make_fake_kiro(tmp.path())?;
+    fs::write(
+        repo.join("tasks.json"),
+        serde_json::to_string(&json!([{
+            "id": "loop",
+            "prompt": "Change allowed",
+            "allow": ["allowed.txt"],
+            "review_loop": {
+                "max_iterations": 2,
+                "review_prompt": "Review patch",
+                "approve_token": "APPROVED",
+                "revise_token": "NEEDS_CHANGES"
+            }
+        }]))?,
+    )?;
+
+    cli(&repo, &fake)?
+        .env("FAKE_KIRO_MODE", "review_loop_approved")
+        .args(["parallel-worktree", "tasks.json", "--max-concurrency", "1"])
+        .assert()
+        .success();
+
+    let run_id = latest_run_id(&repo)?;
+    let task_dir = repo.join(format!(".kiro-sidecar/runs/{run_id}/tasks/loop"));
+    assert!(task_dir.join("worktree.patch").is_file());
+    assert!(task_dir.join("iterations/1/worktree.patch").is_file());
+    assert!(
+        fs::read_to_string(task_dir.join("iterations/1/review_output.txt"))?
+            .starts_with("APPROVED")
+    );
+    let metadata: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(task_dir.join("metadata.json"))?)?;
+    assert_eq!(metadata["review_loop"]["status"], "approved");
+    assert_eq!(metadata["review_loop"]["iterations"], 1);
+    assert_eq!(metadata["record"]["status"], "ok");
+    Ok(())
+}
+
+#[test]
+fn parallel_worktree_review_loop_revises_until_approved() -> Result<(), Box<dyn Error>> {
+    let tmp = TempDir::new()?;
+    let repo = tmp.path().join("repo");
+    fs::create_dir(&repo)?;
+    init_repo(&repo)?;
+    let fake = make_fake_kiro(tmp.path())?;
+    let attempts = tmp.path().join("attempts.txt");
+    let reviews = tmp.path().join("reviews.txt");
+    fs::write(
+        repo.join("tasks.json"),
+        serde_json::to_string(&json!([{
+            "id": "loop",
+            "prompt": "Change allowed",
+            "allow": ["allowed.txt"],
+            "review_loop": {
+                "max_iterations": 3,
+                "review_prompt": "Review patch",
+                "approve_token": "APPROVED",
+                "revise_token": "NEEDS_CHANGES"
+            }
+        }]))?,
+    )?;
+
+    cli(&repo, &fake)?
+        .env("FAKE_KIRO_MODE", "review_loop_revise_once")
+        .env("FAKE_KIRO_ATTEMPTS_FILE", &attempts)
+        .env("FAKE_KIRO_REVIEW_FILE", &reviews)
+        .args(["parallel-worktree", "tasks.json", "--max-concurrency", "1"])
+        .assert()
+        .success();
+
+    assert_eq!(fs::read_to_string(attempts)?.lines().count(), 2);
+    assert_eq!(fs::read_to_string(reviews)?.lines().count(), 2);
+    let run_id = latest_run_id(&repo)?;
+    let task_dir = repo.join(format!(".kiro-sidecar/runs/{run_id}/tasks/loop"));
+    assert!(
+        fs::read_to_string(task_dir.join("iterations/1/review_output.txt"))?
+            .starts_with("NEEDS_CHANGES")
+    );
+    assert!(
+        fs::read_to_string(task_dir.join("iterations/2/review_output.txt"))?
+            .starts_with("APPROVED")
+    );
+    let metadata: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(task_dir.join("metadata.json"))?)?;
+    assert_eq!(metadata["review_loop"]["status"], "approved");
+    assert_eq!(metadata["review_loop"]["iterations"], 2);
+    assert_eq!(metadata["record"]["attempts"], 2);
+    Ok(())
+}
+
+#[test]
+fn parallel_worktree_review_loop_exhausts() -> Result<(), Box<dyn Error>> {
+    let tmp = TempDir::new()?;
+    let repo = tmp.path().join("repo");
+    fs::create_dir(&repo)?;
+    init_repo(&repo)?;
+    let fake = make_fake_kiro(tmp.path())?;
+    fs::write(
+        repo.join("tasks.json"),
+        serde_json::to_string(&json!([{
+            "id": "loop",
+            "prompt": "Change allowed",
+            "allow": ["allowed.txt"],
+            "review_loop": {
+                "max_iterations": 2,
+                "review_prompt": "Review patch",
+                "approve_token": "APPROVED",
+                "revise_token": "NEEDS_CHANGES"
+            }
+        }]))?,
+    )?;
+
+    cli(&repo, &fake)?
+        .env("FAKE_KIRO_MODE", "review_loop_needs_changes")
+        .args(["parallel-worktree", "tasks.json", "--max-concurrency", "1"])
+        .assert()
+        .failure();
+
+    let lines = fs::read_to_string(single_results_file(&repo)?)?;
+    assert!(lines.contains("\"status\":\"failed\""));
+    assert!(lines.contains("review_loop exhausted"));
+    let run_id = latest_run_id(&repo)?;
+    let task_dir = repo.join(format!(".kiro-sidecar/runs/{run_id}/tasks/loop"));
+    assert!(task_dir.join("worktree.patch").is_file());
+    let metadata: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(task_dir.join("metadata.json"))?)?;
+    assert_eq!(metadata["review_loop"]["status"], "exhausted");
+    assert_eq!(metadata["review_loop"]["iterations"], 2);
+    Ok(())
+}
+
+#[test]
+fn parallel_worktree_review_loop_rejects_unknown_verdict() -> Result<(), Box<dyn Error>> {
+    let tmp = TempDir::new()?;
+    let repo = tmp.path().join("repo");
+    fs::create_dir(&repo)?;
+    init_repo(&repo)?;
+    let fake = make_fake_kiro(tmp.path())?;
+    fs::write(
+        repo.join("tasks.json"),
+        serde_json::to_string(&json!([{
+            "id": "loop",
+            "prompt": "Change allowed",
+            "allow": ["allowed.txt"],
+            "review_loop": {
+                "max_iterations": 1,
+                "review_prompt": "Review patch",
+                "approve_token": "APPROVED",
+                "revise_token": "NEEDS_CHANGES"
+            }
+        }]))?,
+    )?;
+
+    cli(&repo, &fake)?
+        .env("FAKE_KIRO_MODE", "review_loop_unknown")
+        .args(["parallel-worktree", "tasks.json", "--max-concurrency", "1"])
+        .assert()
+        .failure();
+
+    let lines = fs::read_to_string(single_results_file(&repo)?)?;
+    assert!(lines.contains("review_loop reviewer did not start"));
+    let run_id = latest_run_id(&repo)?;
+    let task_dir = repo.join(format!(".kiro-sidecar/runs/{run_id}/tasks/loop"));
+    let metadata: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(task_dir.join("metadata.json"))?)?;
+    assert_eq!(metadata["review_loop"]["status"], "unknown_verdict");
+    Ok(())
+}
+
+#[test]
+fn parallel_worktree_review_loop_records_review_failure() -> Result<(), Box<dyn Error>> {
+    let tmp = TempDir::new()?;
+    let repo = tmp.path().join("repo");
+    fs::create_dir(&repo)?;
+    init_repo(&repo)?;
+    let fake = make_fake_kiro(tmp.path())?;
+    fs::write(
+        repo.join("tasks.json"),
+        serde_json::to_string(&json!([{
+            "id": "loop",
+            "prompt": "Change allowed",
+            "allow": ["allowed.txt"],
+            "review_loop": {
+                "max_iterations": 1,
+                "review_prompt": "Review patch",
+                "approve_token": "APPROVED",
+                "revise_token": "NEEDS_CHANGES"
+            }
+        }]))?,
+    )?;
+
+    cli(&repo, &fake)?
+        .env("FAKE_KIRO_MODE", "review_loop_review_fails")
+        .args(["parallel-worktree", "tasks.json", "--max-concurrency", "1"])
+        .assert()
+        .failure();
+
+    let lines = fs::read_to_string(single_results_file(&repo)?)?;
+    assert!(lines.contains("review failed"));
+    let run_id = latest_run_id(&repo)?;
+    let task_dir = repo.join(format!(".kiro-sidecar/runs/{run_id}/tasks/loop"));
+    let metadata: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(task_dir.join("metadata.json"))?)?;
+    assert_eq!(metadata["review_loop"]["status"], "review_failed");
+    assert_eq!(metadata["record"]["returncode"], 9);
+    Ok(())
+}
+
+#[test]
+fn parallel_worktree_review_loop_retries_worker_within_iteration() -> Result<(), Box<dyn Error>> {
+    let tmp = TempDir::new()?;
+    let repo = tmp.path().join("repo");
+    fs::create_dir(&repo)?;
+    init_repo(&repo)?;
+    let fake = make_fake_kiro(tmp.path())?;
+    let attempts = tmp.path().join("attempts.txt");
+    fs::write(
+        repo.join("tasks.json"),
+        serde_json::to_string(&json!([{
+            "id": "loop",
+            "prompt": "Change allowed",
+            "allow": ["allowed.txt"],
+            "retry": 1,
+            "review_loop": {
+                "max_iterations": 1,
+                "review_prompt": "Review patch",
+                "approve_token": "APPROVED",
+                "revise_token": "NEEDS_CHANGES"
+            }
+        }]))?,
+    )?;
+
+    cli(&repo, &fake)?
+        .env("FAKE_KIRO_MODE", "review_loop_retry_then_approve")
+        .env("FAKE_KIRO_ATTEMPTS_FILE", &attempts)
+        .args(["parallel-worktree", "tasks.json", "--max-concurrency", "1"])
+        .assert()
+        .success();
+
+    assert_eq!(fs::read_to_string(attempts)?.lines().count(), 2);
+    let run_id = latest_run_id(&repo)?;
+    let task_dir = repo.join(format!(".kiro-sidecar/runs/{run_id}/tasks/loop"));
+    let metadata: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(task_dir.join("metadata.json"))?)?;
+    assert_eq!(metadata["review_loop"]["status"], "approved");
+    assert_eq!(metadata["review_loop"]["iterations"], 1);
+    assert_eq!(metadata["record"]["attempts"], 2);
+    Ok(())
+}
+
+#[test]
+fn parallel_non_worktree_rejects_review_loop() -> Result<(), Box<dyn Error>> {
+    let tmp = TempDir::new()?;
+    let repo = tmp.path().join("repo");
+    fs::create_dir(&repo)?;
+    init_repo(&repo)?;
+    let fake = make_fake_kiro(tmp.path())?;
+    fs::write(
+        repo.join("tasks.json"),
+        serde_json::to_string(&json!([{
+            "id": "loop",
+            "prompt": "Explore",
+            "review_loop": {
+                "max_iterations": 1,
+                "review_prompt": "Review patch",
+                "approve_token": "APPROVED",
+                "revise_token": "NEEDS_CHANGES"
+            }
+        }]))?,
+    )?;
+
+    cli(&repo, &fake)?
+        .args(["parallel-explore", "tasks.json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "review_loop, which is only supported by parallel-worktree",
+        ));
     Ok(())
 }
 
